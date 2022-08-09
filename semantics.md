@@ -1,5 +1,7 @@
 # Act2
 
+An act spec is a description of the non reverting behaviour of an EVM program.
+
 ## Core Language
 
 ### Specifications
@@ -10,19 +12,67 @@ A specification in act is a constraint system that evaluates to `true`.
 
 There are two core types in act:
 
-  - int  : an unbounded integer
-  - bool : a boolean
+  - int       : an unbounded integer
+  - bool      : a boolean
 
 We can introduce literals of the above types as follows:
 
   - int  : a number (e.g. `100`)
   - bool : `true`, `false`
 
-Variables can be of any type (including predicates)
+There are two kinds of variables:
 
-### Predicates
+  - Arg : a reference to calldata or the environment
+  - Ref : a reference to storage (either to the pre or post state)
 
-Users can define custom predicates using the `->` constructor.
+Variables are always either an int or a bool.
+
+```haskell
+-- Core datatypes
+data ActType
+  = Int
+  | Bool
+
+data Timing
+  = Pre
+  | Post
+
+data Act (a :: ActType) where
+  -- Lits
+  LitBool :: Bool -> Act Bool
+  LitInt :: Int -> Act Int
+
+  -- Vars
+  Ref :: Timing -> String -> Act a
+  Arg :: String -> Act a
+  Env :: EthEnv -> Act a
+
+  -- Ops
+  And :: Act Bool -> Act Bool -> Act Bool
+  Or :: Act Bool -> Act Bool -> Act Bool
+
+-- Typing Statements
+data Atom where
+  IntDef :: TypeDef
+  BoolDef :: TypeDef
+
+data Composite where
+  FunDef :: [Atom] -> Atom -> Composite
+
+data TypeDef where
+  A :: Atom -> TypeDef
+  C :: Composite -> TypeDef
+
+-- Top Level AST
+newtype Scope = Scope [(String, TypeDef)]
+newtype Constructor = Constructor Scope (Act Bool)
+newtype Behaviour = Behaviour Scope (Act Bool)
+data Contract = Contract Scope Constructor [Behaviour]
+```
+
+### Functions
+
+Users can define functions using the `->` constructor.
 
 For example:
 
@@ -50,7 +100,7 @@ The final type checked AST has no notion of scope.
 The concrete syntax has a notion of local scope that exists only to catch errors introduced by
 typos.
 
-Variables can be introduced using `let A in B` which has type `bool`.
+Abstract variables can be introduced using `let A in B`, where B has type Bool.
 
 ```act
 let
@@ -63,7 +113,14 @@ Variables can only be referenced if they have been introduced via let beforehand
 
 ### Typing Statements
 
-TODO...
+There are two atomic types (int and bool).
+Function types can be introduced using the `->` constructor.
+
+`-> :: Type -> Type -> Type` is a binary type operator that produces a function type.
+
+map :: (int -> int) -> int -> int
+
+Functions can only take
 
 ## Sugar
 

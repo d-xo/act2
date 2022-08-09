@@ -21,18 +21,21 @@ storage of ERC20
 ```act
 constructor of ERC20
 interface constructor(string _name, string _symbol, uint8 _decimals)
-
+let
+  _name :: int -> int
+  _symbol :: int -> int
+  _decimals :: int
+in
+  in_range 8 _decimals
   name = _name
   symbol = _symbol
   decimals = _decimals
-  locked = 0
 ```
 
 ## Public Interface
 
 ```act
 contract ERC20
-  locked = 0
 
   interface approve(address spender, uint256 amount)
 
@@ -41,36 +44,38 @@ contract ERC20
 
   interface transfer(address to, uint256 amount)
 
-    (balanceOf CALLER) >= amount
-    foo = 1
-    foo = amount
-    bar = to
+    in_range 256 ((balanceOf CALLER) - amount)
+    in_range 256 ((balanceOf to) + amount)
     RETURNDATA = 1
 
     case CALLER /= to
 
-      (balanceOf from)' = (balanceOf from) - amount
-      (balanceOf to)'   = (balanceOf to) + amount
+      move CALLER to amount
 
   interface transferFrom(address from, address to, uint256 amount)
 
-    RETURNDATA        = 1
-    (balanceOf from) >= amount
+    in_range 256 ((balanceOf from) - amount)
+    in_range 256 ((balanceOf to) + amount)
+    RETURNDATA = 1
 
     case (allowance from CALLER) = UINT256_MAX
 
       case from /= to
 
-        (balanceOf from)' = (balanceOf from) - amount
-        (balanceOf to)'   = (balanceOf to) + amount
+        move from to amount
 
-     case _
+    case _
 
       (allowance from CALLER) >= amount
       (allowance from CALLER)' = (allowance from CALLER) - amount
 
       case from /= to
 
-        (balanceOf from)' = (balanceOf from) - amount
-        (balanceOf to)'   = (balanceOf to) + amount
+        move from to amount
+
+where
+  move :: address -> address -> int -> bool
+  move src dst = and
+    (balanceOf from)' = (balanceOf from) - amount
+    (balanceOf to)'   = (balanceOf to) + amount
 ```
