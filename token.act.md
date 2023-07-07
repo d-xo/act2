@@ -124,11 +124,15 @@ data STy (t :: Ty) where
   SBool :: STy ABool
   SStr  :: STy AStr
 
+data STime (t :: Time) where
+  SPre :: STime Pre
+  SPost :: STime Post
+
 data Timing
   = Pre
   | Post
 
-data Provers
+data Prover
   = SMT
   | Coq
 

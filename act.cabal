@@ -9,11 +9,15 @@ copyright:          dxo
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 
-common warnings
+common common
     ghc-options: -Wall
+    build-depends:
+        text,
+        containers,
+        parameterized-utils
 
 library
-    import:           warnings
+    import:           common
     exposed-modules:  Act.Syntax.Typed
     default-language: GHC2021
     hs-source-dirs:   src
@@ -21,7 +25,7 @@ library
         base ^>=4.16.4.0
 
 executable act
-    import:           warnings
+    import:           common
     main-is:          Main.hs
     default-language: GHC2021
     hs-source-dirs:   exe
@@ -30,7 +34,7 @@ executable act
         act
 
 test-suite act-test
-    import:           warnings
+    import:           common
     default-language: GHC2021
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test

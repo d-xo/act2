@@ -11,9 +11,12 @@
 
       perSystem = { self', pkgs, ... }: {
 
-        haskellProjects.default = {};
+        haskellProjects.default = {
+          settings = {
+            parameterized-utils.broken = false;
+          };
+        };
 
-        # haskell-flake doesn't set the default package, but you can do it here.
         packages.default = self'.packages.act;
       };
     };
