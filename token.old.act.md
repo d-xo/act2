@@ -33,6 +33,11 @@ case CALLER =/= to:
      balanceOf[CALLER] => balanceOf[CALLER] - value
      balanceOf[to]     => balanceOf[to] + value
 
+  ensures
+
+
+     post(balanceOf[CALLER]) == pre(balanceOf[CALLER]) - value)
+
   returns 1
 
 case CALLER == to:

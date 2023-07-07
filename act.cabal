@@ -1,0 +1,40 @@
+cabal-version:      3.4
+name:               act
+version:            0.1.0.0
+license:            AGPL-3.0-only
+license-file:       LICENSE
+author:             dxo
+maintainer:         git@dxo.sh
+copyright:          dxo
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  Act.Syntax.Typed
+    default-language: GHC2021
+    hs-source-dirs:   src
+    build-depends:
+        base ^>=4.16.4.0
+
+executable act
+    import:           warnings
+    main-is:          Main.hs
+    default-language: GHC2021
+    hs-source-dirs:   exe
+    build-depends:
+        base ^>=4.16.4.0,
+        act
+
+test-suite act-test
+    import:           warnings
+    default-language: GHC2021
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.16.4.0,
+        act

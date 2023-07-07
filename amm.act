@@ -1,0 +1,3 @@
+-- A Uniswap V2 Style AMM
+contract Amm {
+}

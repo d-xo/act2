@@ -1,81 +1,210 @@
-# ERC20 (Solmate)
+# Act2
 
-https://github.com/transmissions11/solmate/blob/d155ee8d58f96426f57c015b34dee8a410c1eacc/src/tokens/ERC20.sol
-
-## Storage Layout
+## Spec
 
 ```act
-storage of ERC20
+contract ERC20 {
 
-  locked      :: bool
-  name        :: string
-  symbol      :: string
-  decimals    :: uint8
-  totalSupply :: uint256
-  balanceOf   :: address -> uint256
-  allowance   :: address -> address -> uint256
+  -- storage layout --
+
+  storage {
+    name        : str
+    symbol      : str
+    totalSupply : u256
+    balanceOf   : addr -> u256
+    allowance   : (addr, addr) -> u256
+  }
+
+  -- invariants --
+
+  inv @coq total_sum_balances
+    = ∀ (a : addr) . sum([balanceOf(a)]) = totalSupply
+
+  -- initializiation --
+
+  fn constructor(_name : str, _symbol : str, supply : u256) {
+    rewrites {
+      [name]' <- _name
+      [symbol]' <- _symbol
+      [totalSupply]' <- supply
+      [balanceOf(CALLER)]' <- supply
+    }
+  }
+
+  -- mutators --
+
+  fn approve(usr : addr, amt : u256) -> bool {
+    rewrites [allowance(CALLER,addr)]' <- amt
+    returns true
+  }
+
+  fn transfer(to : addr, amt : u256) -> bool:
+    case (CALLER /= to) {
+      requires in u256
+        [balanceOf(CALLER)] - amt
+        [balanceOf(to)] + amt
+      rewrites move(CALLER, to, amt)
+      returns true
+    }
+    otherwise {
+      requires in u256 ([balanceOf(CALLER)] - amt)
+      returns true
+    }
+  }
+
+  fn transferFrom(src : addr, dst : addr, amt : u256) -> bool {
+    case (src /= dst && src /= CALLER) {
+      requires in u256
+        [balanceOf(src)] - amt
+        [balanceOf(dst)] + amt
+        [allowance(src, caller)] - amt
+
+      rewrites
+        [allowance(src, CALLER)]! <- [allowance(src, CALLER)] - amt
+        move(from, to, amount)
+
+      returns true
+    }
+    otherwise {
+      requires in u256 ([balanceOf(src)] - amt)
+      returns true
+    }
+  }
+
+  -- state getters --
+
+  fn allowance(src : addr, dst : addr) -> u256 {
+    returns [allowance(src, dst)]
+  }
+
+  fn balanceOf(usr : addr) -> u256 {
+    returns [balanceOf(usr)]
+  }
+
+  fn totalSupply() -> u256 {
+    returns [totalSupply]
+  }
+
+  -- metadata --
+
+  fn name() -> str {
+    returns [name]
+  }
+
+  fn symbol() -> str {
+    returns [symbol]
+  }
+
+  fn decimals() -> str {
+    returns 18
+  }
+} where {
+  move = macro!(src : addr, dst : addr, amt : u256) -> rewrites {
+    [balanceOf(from)]! <- [balanceOf(from)] - amt
+    [balanceOf(to)]!   <- [balanceOf(to)] + amt
+  }
+}
 ```
 
-## Constructor
+## AST
 
-```act
-constructor of ERC20
-interface constructor(string _name, string _symbol, uint8 _decimals)
-let
-  _name :: int -> int
-  _symbol :: int -> int
-  _decimals :: int
-in
-  in_range 8 _decimals
-  name = _name
-  symbol = _symbol
-  decimals = _decimals
-```
+```haskell
+data Ty
+  = AInt
+  | ABool
+  | AStr
 
-## Public Interface
+type family LitRep Ty where
+  LitRep AInt = Integer
+  LitRep ABool = Bool
+  LitRrp AStr = Text
 
-```act
-contract ERC20
+data STy (t :: Ty) where
+  SInt  :: STy AInt
+  SBool :: STy ABool
+  SStr  :: STy AStr
 
-  interface approve(address spender, uint256 amount)
+data Timing
+  = Pre
+  | Post
 
-    (allowance CALLER spender)' = amount
-    RETURNDATA = 1
+data Provers
+  = SMT
+  | Coq
 
-  interface transfer(address to, uint256 amount)
+data Quantifier
+  = Forall
+  | Exists
 
-    in_range 256 ((balanceOf CALLER) - amount)
-    in_range 256 ((balanceOf to) + amount)
-    RETURNDATA = 1
+data Binder ty = Binder
+  { name :: Text
+  , ty :: STy ty
+  }
 
-    case CALLER /= to
+data Invariant = Invariant
+  { name :: Text
+  , prover :: Prover
+  , args :: Seq (Quantifier, Some Binder)
+  , prop :: Prop
+  }
 
-      move CALLER to amount
+data Cases t = Cases (Seq (Prop a)) a | Single a
 
-  interface transferFrom(address from, address to, uint256 amount)
+data Constructor = Constructor
+  { name :: Text
+  , args :: Seq (Some Binder)
+  , spec :: Cases CSpec
+  }
 
-    in_range 256 ((balanceOf from) - amount)
-    in_range 256 ((balanceOf to) + amount)
-    RETURNDATA = 1
+data CSpec = CSpec
+  { requires :: Seq Prop
+  , rewrites :: Seq (Some Rewrite)
+  , ensures :: Seq Prop
+  }
 
-    case (allowance from CALLER) = UINT256_MAX
+data Method = Method
+  { name :: Text
+  , args :: Seq (Some Binder)
+  , spec :: Cases Spec
+  }
 
-      case from /= to
+data Spec = Spec
+  { requires :: Seq Prop
+  , rewrites :: Seq (Some Rewrite)
+  , ensures :: Seq Prop
+  , returns :: Some Expr
+  }
 
-        move from to amount
+data Rewrite t = Rewrite
+  { lhs = StorageItem Post t
+  , rhs = Expr t
+  }
 
-    case _
+data StorageItem (p :: Time) (ty :: Ty) where
+  StorageItem :: STime p -> StorageLoc ty -> Seq (Some Expr) -> StorageItem p ty
 
-      (allowance from CALLER) >= amount
-      (allowance from CALLER)' = (allowance from CALLER) - amount
+data Prop where
+  PEq :: Expr a -> Expr a -> Prop
 
-      case from /= to
+data Expr (ty :: Ty) where
+  Var :: STy ty -> Text -> Expr ty
+  Lit :: STy ty -> LitRep ty -> Expr ty
+  Add :: Expr AInt -> Expr AInt -> Expr AInt
+  Sub :: Expr AInt -> Expr AInt -> Expr AInt
+  Read :: StorageItem p t -> Expr t
 
-        move from to amount
+newtype StorageLayout = StorageLayout (Seq (Some StorageLoc))
 
-where
-  move :: address -> address -> int -> bool
-  move src dst = and
-    (balanceOf from)' = (balanceOf from) - amount
-    (balanceOf to)'   = (balanceOf to) + amount
+data StorageLoc t = StorageLoc
+  { args :: Seq (Some Binder)
+  , ret :: STy y
+  }
+
+data Contract = Contract
+  { name :: Text
+  , storage :: StorageLayout
+  , invariants :: Seq Invariant
+  , constructor :: Constructor
+  , methods :: Seq Method
+  }
 ```

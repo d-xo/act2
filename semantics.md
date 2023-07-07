@@ -53,8 +53,8 @@ data Act (a :: ActType) where
 
 -- Typing Statements
 data Atom where
-  IntDef :: TypeDef
-  BoolDef :: TypeDef
+  IntDef :: Atom
+  BoolDef :: Atom
 
 data Composite where
   FunDef :: [Atom] -> Atom -> Composite
@@ -187,3 +187,27 @@ In the following `a` is an atomic type (either `int` or `bool`).
 - `NUMBER`    : int
 - `TIMESTAMP` : int
 
+## Problems
+
+The problem with representing state updates as constraints, is that some state variables may be left
+in an underspecifed state.
+
+```act
+upd :: (int -> int -> int) -> int -> int -> (int -> int -> int) -> Prop
+upd f a b prev = if a == 3 && b == 6
+                   then f a b == 10
+                 else if a == 5 && b == 7
+                   then f a b == 4
+                 else f a b == prev a b
+
+storage of A
+
+  x :: uint
+  y :: uint -> uint
+
+contract A
+
+  interface foo()
+
+    x > 0
+```
