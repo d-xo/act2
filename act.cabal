@@ -10,7 +10,9 @@ build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 
 common common
-    ghc-options: -Wall
+    ghc-options:
+        -Wall
+        -Wno-unticked-promoted-constructors
     build-depends:
         text,
         containers,
