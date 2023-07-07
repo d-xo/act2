@@ -14,7 +14,8 @@ common common
     build-depends:
         text,
         containers,
-        parameterized-utils
+        parameterized-utils,
+        hashmap
 
 library
     import:           common

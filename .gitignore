@@ -4,3 +4,6 @@
 # nix
 result
 result/
+
+# cabal
+dist-newstyle/

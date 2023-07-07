@@ -1,11 +1,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Act.Syntax.Typed where
 
 import Data.Text
 import Data.Sequence
+  import Data
+import Data.Parameterized.Some
 
 data Ty
   = AInt
@@ -50,7 +53,9 @@ data Invariant = Invariant
   , prop :: Prop
   }
 
-data Cases t = Cases (Seq (Prop a)) a | Single a
+data Cases s
+  = Cases (Map Prop s) s
+  | Single s
 
 data Constructor = Constructor
   { name :: Text
@@ -99,7 +104,7 @@ newtype StorageLayout = StorageLayout (Seq (Some StorageLoc))
 
 data StorageLoc t = StorageLoc
   { args :: Seq (Some Binder)
-  , ret :: STy y
+  , ret :: STy t
   }
 
 data Contract = Contract
