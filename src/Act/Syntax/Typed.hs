@@ -2,15 +2,23 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Act.Syntax.Typed where
 
 import Data.Text (Text)
 import Data.Sequence (Seq)
 import Data.HashMap (Map)
-import Data.Set (Set)
-import Data.Parameterized.Some (Some)
-import Data.Parameterized.List (List)
+import Data.HashSet (Set)
+import Data.HashSet qualified as Set
+import Data.Parameterized.Some (Some(..))
+import Data.Parameterized.List (List(..))
+import Data.Parameterized.Classes
+import Data.Parameterized.TH.GADT
+import Generics.Kind.Derive.Eq
+import Generics.Kind.Derive.FunctorOne
 
 
 --- Contracts --------------------------------------------------------------------------------------
@@ -22,7 +30,7 @@ data Contract = Contract
   , storage :: StorageLayout
   , invariants :: Set Invariant
   , constructor :: Constructor
-  , methods :: Set (Some Method)
+  , methods :: Set Method
   }
 
 
@@ -31,30 +39,30 @@ data Contract = Contract
 
 -- | Initcode spec
 data Constructor = Constructor
-  { name :: Text
-  , args :: Seq (Some (Binder Unquantified))
-  , spec :: Cases CBranch
+  { params :: Seq (Some (Binder Unquantified))
+  , branches :: Cases CBranch
   }
 
 -- | A description of a single branch of a constructor execution
 data CBranch = CBranch
   { requires :: Set (Expr Unquantified Timed ABool)
-  , rewrites :: Set (Some (Rewrite Unquantified))
+  , rewrites :: Set (Some (Update Unquantified))
   , ensures :: Set (Expr Unquantified Timed ABool)
   }
 
 -- | Method spec
-data Method (a :: Ty) = Method
-  { name :: Text
-  , args :: Seq (Some (Binder Unquantified))
-  , spec :: Cases (Branch a)
-  , ret  :: STy a
-  }
+data Method where
+  Method ::
+    { name :: Text
+    , args :: Seq (Some (Binder Unquantified))
+    , spec :: Cases (Branch a)
+    , ret  :: STy a
+    } -> Method
 
 -- | A description of a single branch of a method execution
 data Branch (a :: Ty) = Branch
   { requires :: Set (Expr Unquantified Timed ABool)
-  , rewrites :: Set (Some (Rewrite Unquantified))
+  , rewrites :: Set (Some (Update Unquantified))
   , returns :: Expr Unquantified Timed a
   , ensures :: Set (Expr Unquantified Timed ABool)
   }
@@ -77,31 +85,33 @@ data Binder (q :: Quantity) (a :: Ty) where
 
 
 -- | Layout of variables in storage
-newtype StorageLayout = StorageLayout (Seq (Some (Loc Unquantified)))
+newtype StorageLayout = StorageLayout (Seq (Some Loc))
 
 -- | Existential wrapper to make StorageLayout typecheck
-data Loc (q :: Quantity) (a :: Ty) where
-  Loc :: Some (StorageLoc q a) -> Loc q a
+data Loc (a :: Ty) where
+  Loc :: Some (StorageLoc as) -> Loc a
 
--- | An assignment from the rhs to the lhs
-data Rewrite (q :: Quantity) (a :: Ty) where
+-- | Rewrite loc into exp
+data Update (q :: Quantity) (a :: Ty) where
   Rewrite ::
-    { lhs :: Some (StorageLoc q a)
-    , rhs :: Expr q Timed a
-    } -> Rewrite q a
+    { loc :: Loc a
+    , exp :: Expr q Timed a
+    } -> Update q a
 
 -- | A pointer to a location in storage
-data StorageLoc (q :: Quantity) (a :: Ty) (as :: [Ty]) where
+data StorageLoc (as :: [Ty]) (a :: Ty) where
   StorageLoc ::
-    { args :: List (Binder q) as
+    { name :: Text
+    , args :: List STy as
     , ret :: STy a
-    } -> StorageLoc q a as
+    } -> StorageLoc as a
+
 
 -- | The result of reading an item from storage
 data StorageItem (q :: Quantity) (t :: Timing) (a :: Ty) where
   StorageItem ::
     { time :: Time t
-    , loc  :: StorageLoc q a as
+    , loc  :: StorageLoc as a
     , args :: List (Expr q t) as
     } -> StorageItem q t a
 
@@ -126,7 +136,7 @@ data Time t where
 data Invariant = Invariant
   { name :: Text
   , prover :: Prover
-  , args :: Seq (Some (Binder Quantified))
+  , vars :: Seq (Some (Binder Quantified))
   , prop :: Expr Quantified Untimed ABool
   }
 
@@ -144,6 +154,8 @@ data Quantifier (q :: Quantity) where
   Forall :: Quantifier Quantified
   Exists :: Quantifier Quantified
   Neither :: Quantifier Unquantified
+
+deriving instance Eq (Quantifier q)
 
 
 --- Expressions ------------------------------------------------------------------------------------
@@ -203,3 +215,109 @@ data STy (a :: Ty) where
   SInt  :: STy AInt
   SBool :: STy ABool
   SStr  :: STy AStr
+
+
+--- ERC20 ---
+
+
+name, symbol :: StorageLoc '[] AStr
+name = StorageLoc "name" Nil SStr
+symbol = StorageLoc "symbol" Nil SStr
+
+totalSupply :: StorageLoc '[] AInt
+totalSupply = StorageLoc "totalSupply" Nil SInt
+
+balanceOf :: StorageLoc '[AInt] AInt
+balanceOf = StorageLoc "balanceOf" (SInt :< Nil) SInt
+
+allowance :: StorageLoc '[AInt, AInt] AInt
+allowance = StorageLoc "allowance" (SInt :< SInt :< Nil) SInt
+
+storage :: StorageLayout
+storage = StorageLayout
+  [ Some (Loc (Some name))
+  , Some (Loc (Some symbol))
+  , Some (Loc (Some totalSupply))
+  , Some (Loc (Some balanceOf))
+  , Some (Loc (Some allowance))
+  ]
+
+invariant :: Invariant
+invariant = Invariant
+  { name = "total_sum_balances"
+  , prover = Coq
+  , vars = [Some (Binder "a" Forall SInt)]
+  , prop = Eq SInt
+      (Sum (StorageItem Whenever balanceOf (Var SInt "a" :< Nil)))
+      (Read (StorageItem Whenever totalSupply Nil))
+  }
+
+constructor :: Constructor
+constructor = Constructor
+  { params = []
+  , branches = Single $ CBranch
+      { requires = Set.empty
+      , rewrites = Set.empty
+      , ensures = Set.empty
+      }
+  }
+
+erc20 :: Contract
+erc20 = Contract
+  { name = "ERC20"
+  , storage = storage
+  , invariants = undefined
+  , constructor = undefined
+  , methods = undefined
+  }
+
+$(return [])
+
+$(deriveGenericK ''Expr)
+
+-- deriving instance Eq (Time t)
+-- instance Eq (StorageItem 'Quantified 'Untimed a) where
+--   (==) l@(StorageItem a b c) r@(StorageItem a1 b1 c1) = case testEquality l r of
+--     Nothing -> False
+--     Just Refl -> a == a1 && b == b1 && c == c1
+
+instance TestEquality Time where
+  testEquality = $(structuralTypeEquality [t|Time|] [])
+
+instance TestEquality (Expr q t) where
+  testEquality = $(structuralTypeEquality [t|Expr|]
+    [ (ConType [t|STy|] `TypeApp` AnyType, [|testEquality|])
+    , (ConType [t|StorageItem|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType, [|testEquality|])
+    ])
+
+instance TestEquality (StorageLoc args) where
+  testEquality = $(structuralTypeEquality [t|StorageLoc|]
+    [ (ConType [t|STy|] `TypeApp` AnyType, [|testEquality|])
+    ])
+
+instance TestEquality (StorageItem q t) where
+  testEquality
+    (StorageItem t0 (StorageLoc _ params0 ret0) args0)
+    (StorageItem t1 (StorageLoc _ params1 ret1) args1)
+      = do
+          Refl <- testEquality t0 t1
+          Refl <- testEquality ret0 ret1
+          Refl <- testEquality params0 params1
+          Refl <- testEquality args0 args1
+          pure Refl
+
+instance TestEquality STy where
+  testEquality = $(structuralTypeEquality [t|STy|] [])
+
+deriving instance Eq (STy a)
+
+
+instance TestEquality (Binder q) where
+  testEquality = $(structuralTypeEquality [t|Binder|]
+    [ (ConType [t|STy|] `TypeApp` AnyType, [|testEquality|])
+    ])
+
+-- deriving instance (Eq (Expr Quantified Untimed ABool))
+-- deriving instance (Eq (Expr Quantified Untimed AInt))
+-- deriving instance (Eq Invariant)
+-- deriving instance (Eq Prover)
