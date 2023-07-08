@@ -21,81 +21,97 @@ data Contract = Contract
   , storage :: StorageLayout
   , invariants :: Set Invariant
   , constructor :: Constructor
-  , methods :: Set Method
+  , methods :: Set (Some Method)
   }
+
+
+--- Behaviours -------------------------------------------------------------------------------------
+
 
 -- | Initcode spec
 data Constructor = Constructor
   { name :: Text
-  , args :: Seq (Some Binder)
+  , args :: Seq (Some (Binder Unquantified))
   , spec :: Cases CBranch
   }
 
 -- | A description of a single branch of a constructor execution
 data CBranch = CBranch
-  { requires :: Set (Expr ABool)
-  , rewrites :: Set (Some Rewrite)
-  , ensures :: Set (Expr ABool)
+  { requires :: Set (Expr Unquantified Timed ABool)
+  , rewrites :: Set (Some (Rewrite Unquantified))
+  , ensures :: Set (Expr Unquantified Timed ABool)
   }
 
 -- | Method spec
-data Method = Method
+data Method (a :: Ty) = Method
   { name :: Text
-  , args :: Seq (Some Binder)
-  , spec :: Cases Branch
+  , args :: Seq (Some (Binder Unquantified))
+  , spec :: Cases (Branch a)
+  , ret  :: STy a
   }
 
 -- | A description of a single branch of a method execution
-data Branch = Branch
-  { requires :: Set (Expr ABool)
-  , rewrites :: Set (Some Rewrite)
-  , ensures :: Set (Expr ABool)
-  , returns :: Some Expr
+data Branch (a :: Ty) = Branch
+  { requires :: Set (Expr Unquantified Timed ABool)
+  , rewrites :: Set (Some (Rewrite Unquantified))
+  , returns :: Expr Unquantified Timed a
+  , ensures :: Set (Expr Unquantified Timed ABool)
   }
 
 -- | Potentially multiple execution branches
 data Cases s
-  = Cases (Map (Expr ABool) (Cases s)) s
+  = Cases (Map (Expr Unquantified Timed ABool) (Cases s)) s
   | Single s
 
 -- | Introduce a new name
-data Binder ty = Binder
-  { name :: Text
-  , ty :: STy ty
-  }
+data Binder (q :: Quantity) (a :: Ty) where
+  Binder ::
+    { name :: Text
+    , quantifier :: Quantifier q
+    , ty :: STy a
+    } -> Binder q a
 
 
 --- Storage ----------------------------------------------------------------------------------------
 
 
 -- | Layout of variables in storage
-newtype StorageLayout = StorageLayout (Seq (Some StorageLoc))
+newtype StorageLayout = StorageLayout (Seq (Some (StorageLoc Unquantified)))
 
 -- | An assignment from the rhs to the lhs
-data Rewrite t = Rewrite
-  { lhs :: StorageItem Post t
-  , rhs :: Expr t
-  }
+data Rewrite (q :: Quantity) (a :: Ty) where
+  Rewrite ::
+    { lhs :: StorageLoc q a
+    , rhs :: Expr q Timed a
+    } -> Rewrite q a
 
 -- | A pointer to a location in storage
-data StorageLoc t = StorageLoc
-  { args :: Seq (Some Binder)
-  , ret :: STy t
-  }
+data StorageLoc (q :: Quantity) (a :: Ty) where
+  StorageLoc ::
+    { args :: Seq (Some (Binder q))
+    , ret :: STy a
+    } -> StorageLoc q a
 
 -- | The result of reading an item from storage
-data StorageItem (p :: Time) (ty :: Ty) where
-  StorageItem :: { time :: STime p , loc  :: StorageLoc ty , args :: Seq (Some Expr) } -> StorageItem p ty
+data StorageItem (q :: Quantity) (t :: Timing) (a :: Ty) where
+  StorageItem ::
+    { time :: Time t
+    , loc  :: StorageLoc q a
+    , args :: Seq (Some (Expr q t))
+    } -> StorageItem q t a
 
--- | Was a storage item read from the pre or post state?
-data Time
-  = Pre
-  | Post
+-- | Kind for Time expressions
+data Timing
+  -- ^ Fully explicit timing
+  = Timed
+  -- ^ Storage references can refer to either the pre or post state
+  | Untimed
 
--- | Singleton for Time
-data STime (t :: Time) where
-  SPre  :: STime Pre
-  SPost :: STime Post
+-- | Encodes choice between explicitly referring to the pre-/post-state, or not.
+data Time t where
+  Pre      :: Time Timed
+  Post     :: Time Timed
+  Whenever :: Time Untimed
 
 
 --- Invariants -------------------------------------------------------------------------------------
@@ -105,72 +121,79 @@ data STime (t :: Time) where
 data Invariant = Invariant
   { name :: Text
   , prover :: Prover
-  , args :: Seq (Quantifier, Some Binder)
-  , prop :: Expr ABool
+  , args :: Seq (Some (Binder Quantified))
+  , prop :: Expr Quantified Untimed ABool
   }
 
--- | How should we prove this invariant?
+-- | Supported invariant proof methods
 data Prover
   = SMT
   | Coq
 
 -- | Variables in invariants are quantified
-data Quantifier
-  = Forall
-  | Exists
+data Quantity
+  = Quantified
+  | Unquantified
+
+data Quantifier (q :: Quantity) where
+  Forall :: Quantifier Quantified
+  Exists :: Quantifier Quantified
+  Neither :: Quantifier Unquantified
 
 
 --- Expressions ------------------------------------------------------------------------------------
 
 
--- | Expression types
+-- | Kind for Expr types
 data Ty
   = AInt
   | ABool
   | AStr
 
--- | Core expression types
-data Expr (ty :: Ty) where
+-- | Expressions
+data Expr (q :: Quantity)(t :: Timing) (a :: Ty) where
   -- Variables and literals
-  Lit :: STy ty -> LitRep ty -> Expr ty
-  Var :: STy ty -> Text -> Expr ty
-  Read :: StorageItem p t -> Expr t
+  Lit :: STy a -> LitRep a -> Expr q t a
+  Var :: STy ty -> Text -> Expr q t a
+  Read :: StorageItem q t a -> Expr q t a
 
-  -- Integer arithmetic
-  Add :: Expr AInt -> Expr AInt -> Expr AInt
-  Sub :: Expr AInt -> Expr AInt -> Expr AInt
-  Mul :: Expr AInt -> Expr AInt -> Expr AInt
-  Div :: Expr AInt -> Expr AInt -> Expr AInt
-  Mod :: Expr AInt -> Expr AInt -> Expr AInt
-  Exp :: Expr AInt -> Expr AInt -> Expr AInt
+  -- Integer
+  Add :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  Sub :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  Mul :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  Div :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  Mod :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  Exp :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
+  --
+  Sum :: StorageItem Quantified t a -> Expr Quantified t AInt
 
   -- Boolean
-  And :: Expr ABool -> Expr ABool -> Expr ABool
-  Or  :: Expr ABool -> Expr ABool -> Expr ABool
-  Not :: Expr ABool -> Expr ABool -> Expr ABool
-  LT  :: Expr AInt  -> Expr AInt  -> Expr ABool
-  GT  :: Expr AInt  -> Expr AInt  -> Expr ABool
-  GEq :: Expr AInt  -> Expr AInt  -> Expr ABool
-  LEq :: Expr AInt  -> Expr AInt  -> Expr ABool
-  Eq  :: STy a -> Expr a -> Expr a -> Expr ABool
-  Imp :: Expr ABool -> Expr ABool -> Expr ABool
+  And :: Expr q t ABool -> Expr q t ABool -> Expr q t ABool
+  Or  :: Expr q t ABool -> Expr q t ABool -> Expr q t ABool
+  Not :: Expr q t ABool -> Expr q t ABool -> Expr q t ABool
+  LT  :: Expr q t AInt  -> Expr q t AInt  -> Expr q t ABool
+  GT  :: Expr q t AInt  -> Expr q t AInt  -> Expr q t ABool
+  GEq :: Expr q t AInt  -> Expr q t AInt  -> Expr q t ABool
+  LEq :: Expr q t AInt  -> Expr q t AInt  -> Expr q t ABool
+  Eq  :: STy a -> Expr q t a -> Expr q t a -> Expr q t ABool
+  Imp :: Expr q t ABool -> Expr q t ABool -> Expr q t ABool
 
   -- constrains an integer expression to have a finite range
   -- needed because we encode this differently in different backends
   Fin ::
     { min :: LitRep AInt
     , max :: LitRep AInt
-    , exp :: Expr AInt
-    } -> Expr ABool
+    , exp :: Expr q t AInt
+    } -> Expr q t ABool
 
 -- | The haskell type used to represent literals
-type family LitRep (t :: Ty) where
+type family LitRep (a :: Ty) where
   LitRep AInt = Integer
   LitRep ABool = Bool
   LitRep AStr = Text
 
 -- | Singleton for Ty
-data STy (t :: Ty) where
+data STy (a :: Ty) where
   SInt  :: STy AInt
   SBool :: STy ABool
   SStr  :: STy AStr
