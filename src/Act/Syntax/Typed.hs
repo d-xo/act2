@@ -10,6 +10,7 @@ import Data.Sequence (Seq)
 import Data.HashMap (Map)
 import Data.Set (Set)
 import Data.Parameterized.Some (Some)
+import Data.Parameterized.List (List)
 
 
 --- Contracts --------------------------------------------------------------------------------------
@@ -76,28 +77,32 @@ data Binder (q :: Quantity) (a :: Ty) where
 
 
 -- | Layout of variables in storage
-newtype StorageLayout = StorageLayout (Seq (Some (StorageLoc Unquantified)))
+newtype StorageLayout = StorageLayout (Seq (Some (Loc Unquantified)))
+
+-- | Existential wrapper to make StorageLayout typecheck
+data Loc (q :: Quantity) (a :: Ty) where
+  Loc :: Some (StorageLoc q a) -> Loc q a
 
 -- | An assignment from the rhs to the lhs
 data Rewrite (q :: Quantity) (a :: Ty) where
   Rewrite ::
-    { lhs :: StorageLoc q a
+    { lhs :: Some (StorageLoc q a)
     , rhs :: Expr q Timed a
     } -> Rewrite q a
 
 -- | A pointer to a location in storage
-data StorageLoc (q :: Quantity) (a :: Ty) where
+data StorageLoc (q :: Quantity) (a :: Ty) (as :: [Ty]) where
   StorageLoc ::
-    { args :: Seq (Some (Binder q))
+    { args :: List (Binder q) as
     , ret :: STy a
-    } -> StorageLoc q a
+    } -> StorageLoc q a as
 
 -- | The result of reading an item from storage
 data StorageItem (q :: Quantity) (t :: Timing) (a :: Ty) where
   StorageItem ::
     { time :: Time t
-    , loc  :: StorageLoc q a
-    , args :: Seq (Some (Expr q t))
+    , loc  :: StorageLoc q a as
+    , args :: List (Expr q t) as
     } -> StorageItem q t a
 
 -- | Kind for Time expressions
@@ -164,7 +169,8 @@ data Expr (q :: Quantity)(t :: Timing) (a :: Ty) where
   Div :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
   Mod :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
   Exp :: Expr q t AInt -> Expr q t AInt -> Expr q t AInt
-  --
+
+  -- only available in quantified contexts (i.e. invariants)
   Sum :: StorageItem Quantified t a -> Expr Quantified t AInt
 
   -- Boolean
