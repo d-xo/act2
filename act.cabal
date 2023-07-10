@@ -13,12 +13,12 @@ common common
     ghc-options:
         -Wall
         -Wno-unticked-promoted-constructors
-        -ddump-splices
     build-depends:
         text,
         containers,
         parameterized-utils,
         hashmap,
+        hashable
 
 library
     import:           common
